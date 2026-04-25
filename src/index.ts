@@ -43,6 +43,7 @@ import adminRoutes from './routes/admin.routes';
 import shopAdminRoutes from './routes/shopAdmin.routes';
 import supplierRoutes from './routes/supplier.routes';
 import grnRoutes from './routes/grn.routes';
+import uploadRoutes from './routes/upload.routes';
 
 const app = express();
 const PORT = process.env.PORT || 5000;
@@ -107,11 +108,11 @@ app.use(sanitizeRequestBody);
 app.use(apiRateLimiter);
 
 // 8. Logging with request ID
-morgan.token('request-id', (req) => (req as any).requestId);
+morgan.token('reqId', (req) => (req as any).requestId);
 if (!isProduction) {
-  app.use(morgan(':method :url :status :response-time ms - :request-id'));
+  app.use(morgan(':method :url :status :response-time ms - :reqId'));
 } else {
-  app.use(morgan(':remote-addr - :remote-user [:date[clf]] ":method :url HTTP/:http-version" :status :res[content-length] ":referrer" ":user-agent" :request-id'));
+  app.use(morgan(':remote-addr - :remote-user [:date[clf]] ":method :url HTTP/:http-version" :status :res[content-length] ":referrer" ":user-agent" :reqId'));
 }
 
 // 9. Add security response headers
@@ -125,6 +126,13 @@ app.use((_req, res, next) => {
   }
   next();
 });
+
+// ===================================
+// STATIC FILE SERVING
+// ===================================
+
+// Serve static files for uploads (Local file storage replacing Supabase)
+app.use('/uploads', express.static(path.join(process.cwd(), 'uploads')));
 
 // API version prefix
 const API_PREFIX = '/api/v1';
@@ -732,6 +740,7 @@ app.use(`${API_PREFIX}/admin`, adminRoutes);
 app.use(`${API_PREFIX}/shop-admin`, shopAdminRoutes);
 app.use(`${API_PREFIX}/suppliers`, supplierRoutes);
 app.use(`${API_PREFIX}/grns`, grnRoutes);
+app.use(`${API_PREFIX}/upload`, uploadRoutes);
 
 // Error handling
 app.use(notFound);
