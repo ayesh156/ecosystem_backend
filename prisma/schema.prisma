@@ -1,0 +1,873 @@
+// Prisma Schema for EcoSystem - MySQL (Local & Contabo VPS)
+generator client {
+  provider      = "prisma-client-js"
+  binaryTargets = ["native", "rhel-openssl-3.0.x", "debian-openssl-3.0.x", "linux-musl-openssl-3.0.x"]
+}
+
+datasource db {
+  provider  = "mysql"
+  url       = env("DATABASE_URL")
+}
+
+// ==========================================
+// SHOP MANAGEMENT (Multi-tenant)
+// ==========================================
+
+model Shop {
+  id            String    @id @default(cuid())
+  name          String    
+  slug          String    @unique  // URL-friendly name e.g., "eco-system"
+  subName       String?             // Secondary name e.g., "SOLUTIONS"
+  tagline       String?             // Tagline e.g., "Computer Solutions"
+  description   String?
+  logo          String?
+  address       String?
+  phone         String?
+  email         String?
+  website       String?
+  
+  // Business info
+  businessRegNo String?   // Business registration number
+  taxId         String?   // Tax identification number
+  
+  // Settings
+  currency      String    @default("LKR")
+  taxRate       Float     @default(0)  // Default tax rate for invoices
+  
+  // Status
+  isActive      Boolean   @default(true)
+  
+  // WhatsApp Reminder Templates (Invoice)
+  reminderEnabled           Boolean   @default(true)
+  paymentReminderTemplate   String?   @db.Text
+  overdueReminderTemplate   String?   @db.Text
+  
+  // WhatsApp Reminder Templates (GRN/Supplier)
+  grnReminderEnabled        Boolean   @default(true)
+  grnPaymentReminderTemplate String?  @db.Text
+  grnOverdueReminderTemplate String?  @db.Text
+  
+  // Supplier Order Template (WhatsApp message for placing orders)
+  supplierOrderTemplate     String?   @db.Text
+  
+  // Section Visibility (JSON array of hidden section paths)
+  // hiddenSections: SuperAdmin managed - hidden from ADMIN + USER
+  // adminHiddenSections: Shop ADMIN managed - hidden from USER only
+  // e.g., ["/services", "/quotations", "/estimates", "/cash-management"]
+  hiddenSections            Json?     @default("[]")
+  adminHiddenSections       Json?     @default("[]")
+  
+  // Appearance Settings
+  themeMode       String?   @default("dark")     // 'dark' | 'light'
+  accentColor     String?   @default("emerald")  // 'emerald' | 'blue' | 'purple' | 'rose' | 'amber' | 'indigo'
+  
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  // Relations - All shop data
+  users         User[]
+  customers     Customer[]
+  categories    Category[]
+  brands        Brand[]
+  products      Product[]
+  invoices      Invoice[]
+  invoiceReminders InvoiceReminder[]
+  grnReminders     GRNReminder[]
+  suppliers     Supplier[]
+  grns          GRN[]
+  grnPayments   GRNPayment[]
+
+  @@map("shops")
+}
+
+// ==========================================
+// AUTHENTICATION & USER MANAGEMENT
+// ==========================================
+
+model User {
+  id            String    @id @default(cuid())
+  email         String    @unique
+  password      String
+  name          String
+  role          UserRole  @default(STAFF)
+  isActive      Boolean   @default(true)
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  lastLogin     DateTime?
+
+  // Shop relation - User belongs to a shop
+  shopId        String?
+  shop          Shop?     @relation(fields: [shopId], references: [id])
+
+  // Relations
+  invoicesCreated   Invoice[]  @relation("InvoiceCreatedBy")
+  invoicesUpdated   Invoice[]  @relation("InvoiceUpdatedBy")
+  paymentsRecorded  InvoicePayment[]
+  grnsCreated       GRN[]      @relation("GRNCreatedBy")
+  grnPaymentsRecorded GRNPayment[]
+  refreshTokens     RefreshToken[]
+
+  @@index([shopId])
+  @@map("users")
+}
+
+// ==========================================
+// REFRESH TOKEN STORAGE (Persistent across server restarts)
+// ==========================================
+
+model RefreshToken {
+  id          String    @id @default(cuid())
+  token       String    @unique
+  userId      String
+  expiresAt   DateTime
+  createdAt   DateTime  @default(now())
+
+  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([token])
+  @@index([expiresAt])
+  @@map("refresh_tokens")
+}
+
+enum UserRole {
+  SUPER_ADMIN   // Platform admin (can manage all shops)
+  ADMIN         // Shop admin (full access to their shop)
+  MANAGER       // Shop manager
+  STAFF         // Shop staff
+}
+
+// ==========================================
+// PASSWORD RESET OTP TOKENS
+// ==========================================
+
+model PasswordResetToken {
+  id          String    @id @default(cuid())
+  email       String
+  otp         String    // 6-digit OTP code
+  expiresAt   DateTime  // OTP valid for 10 minutes
+  used        Boolean   @default(false)
+  attempts    Int       @default(0) // Track failed verification attempts
+  createdAt   DateTime  @default(now())
+  
+  @@index([email])
+  @@index([otp])
+  @@map("password_reset_tokens")
+}
+
+// ==========================================
+// CUSTOMER MANAGEMENT
+// ==========================================
+
+model Customer {
+  id            String    @id @default(cuid())
+  name          String
+  email         String?
+  phone         String
+  address       String?
+  
+  // Sri Lankan specific - NIC for warranty claims
+  nic           String?   // National Identity Card number
+  
+  // Purchase statistics
+  totalSpent    Float     @default(0)
+  totalOrders   Int       @default(0)
+  lastPurchase  DateTime?
+  
+  // Credit management (Naya system - common in SL shops)
+  creditBalance Float     @default(0)
+  creditLimit   Float     @default(0)
+  creditDueDate DateTime?
+  creditStatus  CreditStatus @default(CLEAR)
+  
+  // Customer notes
+  notes         String?   @db.Text
+  
+  // Customer type/category
+  customerType  CustomerType @default(REGULAR)
+  
+  // Shop relation
+  shopId        String
+  shop          Shop      @relation(fields: [shopId], references: [id])
+  
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  // Relations
+  invoices      Invoice[]
+  payments      CustomerPaymentRecord[]
+
+  @@index([shopId])
+  @@index([phone])
+  @@index([nic])
+  @@map("customers")
+}
+
+enum CustomerType {
+  REGULAR       // Regular walk-in customer
+  WHOLESALE     // Wholesale/bulk buyer
+  DEALER        // Dealer/reseller
+  CORPORATE     // Corporate/business customer
+  VIP           // VIP customer with special privileges
+}
+
+// Customer Payment Records - Track all payments made by customer
+model CustomerPaymentRecord {
+  id            String    @id @default(cuid())
+  
+  // Customer relation
+  customerId    String
+  customer      Customer  @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  
+  // Invoice relation (optional - for direct invoice payments)
+  invoiceId     String?
+  
+  // Payment details
+  amount        Float
+  paymentMethod PaymentMethod
+  paymentDate   DateTime  @default(now())
+  
+  // Reference and notes
+  reference     String?   // Transaction reference number
+  notes         String?
+  
+  // Source tracking for bi-directional sync
+  source        PaymentSource @default(INVOICE)
+  
+  // Shop relation
+  shopId        String
+  
+  createdAt     DateTime  @default(now())
+
+  @@index([customerId])
+  @@index([invoiceId])
+  @@index([shopId])
+  @@map("customer_payments")
+}
+
+enum PaymentSource {
+  INVOICE       // Payment recorded from invoice
+  CUSTOMER      // Direct payment to customer account
+  CREDIT        // Credit adjustment
+}
+
+enum CreditStatus {
+  CLEAR
+  ACTIVE
+  OVERDUE
+}
+
+// ==========================================
+// PRODUCT MANAGEMENT
+// ==========================================
+
+model Category {
+  id          String    @id @default(cuid())
+  name        String
+  description String?
+  image       String?   @db.Text  // Compressed image URL from Supabase
+  isActive    Boolean   @default(true)
+  
+  // Shop relation
+  shopId      String
+  shop        Shop      @relation(fields: [shopId], references: [id])
+  
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  products    Product[]
+
+  @@unique([shopId, name])  // Unique name per shop
+  @@index([shopId])
+  @@map("categories")
+}
+
+model Brand {
+  id          String    @id @default(cuid())
+  name        String
+  description String?
+  image       String?   @db.Text  // Compressed image URL from Supabase
+  isActive    Boolean   @default(true)
+  website     String?
+  contactEmail String?
+  contactPhone String?
+  
+  // Shop relation
+  shopId      String
+  shop        Shop      @relation(fields: [shopId], references: [id])
+  
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  products    Product[]
+
+  @@unique([shopId, name])  // Unique name per shop
+  @@index([shopId])
+  @@map("brands")
+}
+
+model Product {
+  id              String    @id @default(cuid())
+  name            String
+  description     String?   @db.Text
+  
+  // Pricing - Enhanced for GRN integration
+  price           Float     // Current selling price
+  costPrice       Float?    // Current cost/purchase price from latest GRN
+  lastCostPrice   Float?    // Previous cost price for comparison
+  profitMargin    Float?    // Calculated profit margin percentage
+  
+  // Stock management
+  stock           Int       @default(0)
+  reservedStock   Int       @default(0)  // Stock reserved for pending orders
+  lowStockThreshold Int     @default(10) // Custom low stock threshold
+  
+  // Identifiers
+  serialNumber    String?
+  barcode         String?
+  
+  // Warranty - Important for Sri Lankan electronics shops
+  warranty        String?   // Warranty period (e.g., "6 months", "1 year")
+  warrantyMonths  Int?      // Warranty in months for calculations
+  
+  // Media
+  image           String?   @db.Text  // Base64 or URL of product image
+  
+  // GRN & Purchase tracking
+  lastGRNId       String?   // Last GRN that updated this product
+  lastGRNDate     DateTime?
+  totalPurchased  Int       @default(0)  // Total quantity ever purchased via GRN
+  totalSold       Int       @default(0)  // Total quantity sold via invoices
+  
+  // Shop relation
+  shopId          String
+  shop            Shop      @relation(fields: [shopId], references: [id])
+  
+  // Relations
+  categoryId      String?
+  category        Category? @relation(fields: [categoryId], references: [id])
+  brandId         String?
+  brand           Brand?    @relation(fields: [brandId], references: [id])
+  
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  // Relations
+  invoiceItems    InvoiceItem[]
+  stockMovements  StockMovement[]
+  priceHistory    PriceHistory[]
+  grnItems        GRNItem[]
+
+  @@unique([shopId, barcode])  // Unique barcode per shop
+  @@index([shopId])
+  @@index([serialNumber])
+  @@map("products")
+}
+
+// Stock Movement - Track all stock in/out movements
+model StockMovement {
+  id              String    @id @default(cuid())
+  
+  // Product relation
+  productId       String
+  product         Product   @relation(fields: [productId], references: [id], onDelete: Cascade)
+  
+  // Movement details
+  type            StockMovementType
+  quantity        Int       // Positive for in, negative for out
+  previousStock   Int
+  newStock        Int
+  
+  // Reference to source document
+  referenceId     String?   // GRN ID or Invoice ID
+  referenceNumber String?   // GRN-2026-0001 or INV-2026-0001
+  referenceType   String?   // 'grn' or 'invoice'
+  
+  // Price at the time of movement
+  unitPrice       Float?
+  
+  // Notes and audit
+  notes           String?
+  createdBy       String?
+  
+  // Shop relation
+  shopId          String
+  
+  createdAt       DateTime  @default(now())
+
+  @@index([productId])
+  @@index([shopId])
+  @@index([createdAt])
+  @@map("stock_movements")
+}
+
+enum StockMovementType {
+  GRN_IN          // Stock in from GRN
+  INVOICE_OUT     // Stock out from invoice
+  ADJUSTMENT      // Manual stock adjustment
+  RETURN          // Customer return
+  DAMAGED         // Damaged stock write-off
+  TRANSFER        // Stock transfer between locations
+}
+
+// Price History - Track all price changes
+model PriceHistory {
+  id                    String    @id @default(cuid())
+  
+  // Product relation
+  productId             String
+  product               Product   @relation(fields: [productId], references: [id], onDelete: Cascade)
+  
+  // Change details
+  changeType            PriceChangeType
+  previousCostPrice     Float?
+  newCostPrice          Float?
+  previousSellingPrice  Float?
+  newSellingPrice       Float?
+  
+  // Reason and reference
+  reason                String?   // 'grn_purchase', 'manual_adjustment', 'promotion'
+  referenceId           String?   // GRN ID if from GRN
+  
+  // Audit
+  createdBy             String?
+  
+  // Shop relation
+  shopId                String
+  
+  createdAt             DateTime  @default(now())
+
+  @@index([productId])
+  @@index([shopId])
+  @@map("price_history")
+}
+
+enum PriceChangeType {
+  COST_UPDATE           // Only cost price changed
+  SELLING_UPDATE        // Only selling price changed
+  BOTH                  // Both prices changed
+}
+
+// ==========================================
+// INVOICE MANAGEMENT
+// ==========================================
+
+model Invoice {
+  id            String        @id @default(cuid())
+  invoiceNumber String
+  
+  // Shop relation
+  shopId        String
+  shop          Shop          @relation(fields: [shopId], references: [id])
+  
+  // Customer relation (nullable for walk-in customers)
+  customerId    String?
+  customer      Customer?     @relation(fields: [customerId], references: [id])
+  customerName  String        // Denormalized for quick access ("Walk-in Customer" for walk-ins)
+  
+  // Amounts
+  subtotal      Float
+  tax           Float         @default(0)
+  discount      Float         @default(0)
+  total         Float
+  paidAmount    Float         @default(0)
+  dueAmount     Float         @default(0)
+  
+  // Status
+  status        InvoiceStatus @default(UNPAID)
+  
+  // Dates
+  date          DateTime      @default(now())
+  dueDate       DateTime
+  
+  // Payment info
+  paymentMethod PaymentMethod?
+  salesChannel  SalesChannel  @default(ON_SITE)
+  
+  // Notes
+  notes         String?
+  
+  // Email tracking
+  emailSent     Boolean       @default(false)  // Whether invoice was emailed to customer
+  emailSentAt   DateTime?     // When invoice was emailed
+  
+  // Audit
+  createdById   String?
+  createdBy     User?         @relation("InvoiceCreatedBy", fields: [createdById], references: [id])
+  updatedById   String?
+  updatedBy     User?         @relation("InvoiceUpdatedBy", fields: [updatedById], references: [id])
+  
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
+
+  // Relations
+  items         InvoiceItem[]
+  payments      InvoicePayment[]
+  reminders     InvoiceReminder[]
+
+  @@unique([shopId, invoiceNumber])  // Unique invoice number per shop
+  @@index([shopId])
+  @@index([customerId])
+  @@index([status])
+  @@index([date])
+  @@map("invoices")
+}
+
+model InvoiceItem {
+  id              String    @id @default(cuid())
+  
+  // Invoice relation
+  invoiceId       String
+  invoice         Invoice   @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+  
+  // Product relation (optional for quick-add items)
+  productId       String?
+  product         Product?  @relation(fields: [productId], references: [id])
+  productName     String    // Denormalized for quick access
+  
+  // Quantities and pricing
+  quantity        Int
+  unitPrice       Float
+  originalPrice   Float?    // Original price before any discount
+  discount        Float     @default(0)
+  total           Float
+  
+  // Warranty
+  warranty        String?        // Product warranty code/text (copied from product at time of purchase)
+  warrantyDueDate DateTime?      // Calculated warranty expiration date
+  
+  createdAt       DateTime  @default(now())
+
+  @@index([invoiceId])
+  @@index([productId])
+  @@map("invoice_items")
+}
+
+// ==========================================
+// INVOICE ITEM CHANGE HISTORY
+// Track all changes to invoice items (add, remove, qty change)
+// ==========================================
+
+model InvoiceItemHistory {
+  id              String              @id @default(cuid())
+  
+  // Invoice relation
+  invoiceId       String
+  
+  // Action type
+  action          ItemHistoryAction
+  
+  // Item details at time of change
+  productId       String?
+  productName     String
+  
+  // Quantity changes
+  oldQuantity     Int?                // null for ADD action
+  newQuantity     Int?                // null for REMOVE action
+  
+  // Price at time of change
+  unitPrice       Float
+  
+  // Calculated impact (positive = added cost, negative = reduced cost)
+  amountChange    Float               // e.g., +15000 for add, -15000 for remove
+  
+  // User who made the change
+  changedById     String?
+  changedByName   String?             // Denormalized for quick display
+  
+  // Additional context
+  reason          String?             // Optional reason for change
+  notes           String?
+  
+  // Shop relation for multi-tenant isolation
+  shopId          String
+  
+  createdAt       DateTime            @default(now())
+
+  @@index([invoiceId])
+  @@index([shopId])
+  @@index([createdAt])
+  @@index([action])
+  @@map("invoice_item_history")
+}
+
+enum ItemHistoryAction {
+  ADDED           // New item added to invoice
+  REMOVED         // Item removed from invoice
+  QTY_INCREASED   // Quantity increased
+  QTY_DECREASED   // Quantity decreased
+  PRICE_CHANGED   // Unit price modified
+}
+
+model InvoicePayment {
+  id            String        @id @default(cuid())
+  
+  // Invoice relation
+  invoiceId     String
+  invoice       Invoice       @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+  
+  // Payment details
+  amount        Float
+  paymentMethod PaymentMethod
+  paymentDate   DateTime      @default(now())
+  
+  // Notes and metadata
+  notes         String?
+  reference     String?       // Transaction reference number
+  
+  // Recorded by
+  recordedById  String?
+  recordedBy    User?         @relation(fields: [recordedById], references: [id])
+  
+  createdAt     DateTime      @default(now())
+
+  @@index([invoiceId])
+  @@map("invoice_payments")
+}
+
+enum InvoiceStatus {
+  UNPAID
+  HALFPAY
+  FULLPAID
+  CANCELLED
+  REFUNDED
+}
+
+enum PaymentMethod {
+  CASH
+  CARD
+  BANK_TRANSFER
+  CHEQUE
+  CREDIT
+}
+
+enum SalesChannel {
+  ON_SITE
+  ONLINE
+}
+
+// ==========================================
+// REMINDER TRACKING
+// ==========================================
+
+model InvoiceReminder {
+  id            String        @id @default(cuid())
+  
+  // Invoice relation
+  invoiceId     String
+  invoice       Invoice       @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+  
+  // Shop relation
+  shopId        String
+  shop          Shop          @relation(fields: [shopId], references: [id])
+  
+  // Reminder details
+  type          ReminderType  @default(PAYMENT)
+  channel       String        @default("whatsapp")  // whatsapp, sms, email
+  sentAt        DateTime      @default(now())
+  
+  // Message content
+  message       String?       @db.Text
+  
+  // Customer info at time of send
+  customerPhone String?
+  customerName  String?
+  
+  createdAt     DateTime      @default(now())
+
+  @@index([invoiceId])
+  @@index([shopId])
+  @@index([sentAt])
+  @@map("invoice_reminders")
+}
+
+enum ReminderType {
+  PAYMENT
+  OVERDUE
+}
+
+// ==========================================
+// GRN REMINDER MANAGEMENT
+// ==========================================
+
+model GRNReminder {
+  id            String        @id @default(cuid())
+  
+  // GRN relation
+  grnId         String
+  grn           GRN           @relation(fields: [grnId], references: [id], onDelete: Cascade)
+  
+  // Shop relation
+  shopId        String
+  shop          Shop          @relation(fields: [shopId], references: [id])
+  
+  // Reminder details
+  type          ReminderType  @default(PAYMENT)
+  channel       String        @default("whatsapp")  // whatsapp, sms, email
+  sentAt        DateTime      @default(now())
+  
+  // Message content
+  message       String?       @db.Text
+  
+  // Supplier info at time of send
+  supplierPhone String?
+  supplierName  String?
+  
+  createdAt     DateTime      @default(now())
+
+  @@index([grnId])
+  @@index([shopId])
+  @@index([sentAt])
+  @@map("grn_reminders")
+}
+
+// ==========================================
+// SUPPLIER MANAGEMENT
+// ==========================================
+
+model Supplier {
+  id            String    @id @default(cuid())
+  name          String
+  contactPerson String?
+  email         String?
+  phone         String
+  address       String?
+  
+  // Status
+  isActive      Boolean   @default(true)
+  
+  // Shop relation
+  shopId        String
+  shop          Shop      @relation(fields: [shopId], references: [id])
+  
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  grns          GRN[]
+
+  @@unique([shopId, name])
+  @@index([shopId])
+  @@map("suppliers")
+}
+
+// ==========================================
+// GRN (Goods Received Note) MANAGEMENT
+// ==========================================
+
+model GRN {
+  id            String    @id @default(cuid())
+  grnNumber     String    // e.g. GRN-2024-001
+  
+  // Relations
+  supplierId    String
+  supplier      Supplier  @relation(fields: [supplierId], references: [id])
+  
+  shopId        String
+  shop          Shop      @relation(fields: [shopId], references: [id])
+  
+  // Details
+  referenceNo   String?   // Supplier's Invoice Number
+  deliveryNote  String?   // Delivery note number (8-digit)
+  vehicleNumber String?   // Vehicle plate number
+  receivedBy    String?   // Name of person who received
+  date          DateTime  @default(now())  // Order date
+  expectedDate  DateTime?                   // Expected delivery date
+  receivedDate  DateTime?                   // Actual received date
+  
+  // Amounts
+  subtotal      Float
+  tax           Float     @default(0)
+  discount      Float     @default(0)
+  totalAmount   Float
+  paidAmount    Float     @default(0) // If payment tracked directly on GRN
+    
+  // Status
+  status        GRNStatus @default(DRAFT)
+  paymentStatus PaymentStatus @default(UNPAID)
+  
+  notes         String?   @db.Text
+  
+  // Audit
+  createdById   String?
+  createdBy     User?     @relation("GRNCreatedBy", fields: [createdById], references: [id])
+  
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  items         GRNItem[]
+  payments      GRNPayment[]
+  reminders     GRNReminder[]
+
+  @@unique([shopId, grnNumber])
+  @@index([shopId])
+  @@index([supplierId])
+  @@map("grns")
+}
+
+// GRN Payment Records - Track supplier payments
+model GRNPayment {
+  id            String        @id @default(cuid())
+  
+  // GRN relation
+  grnId         String
+  grn           GRN           @relation(fields: [grnId], references: [id], onDelete: Cascade)
+  
+  // Shop relation
+  shopId        String
+  shop          Shop          @relation(fields: [shopId], references: [id])
+  
+  // Payment details
+  amount        Float
+  paymentMethod PaymentMethod
+  sentAt        DateTime      @default(now())
+  
+  // Notes and metadata
+  notes         String?
+  message       String?       // Same as notes, for API compatibility
+  
+  // Recorded by
+  recordedById  String?
+  recordedBy    User?         @relation(fields: [recordedById], references: [id])
+  
+  createdAt     DateTime      @default(now())
+
+  @@index([grnId])
+  @@index([shopId])
+  @@map("grn_payments")
+}
+
+model GRNItem {
+  id            String    @id @default(cuid())
+  
+  grnId         String
+  grn           GRN       @relation(fields: [grnId], references: [id], onDelete: Cascade)
+  
+  productId     String
+  product       Product   @relation(fields: [productId], references: [id])
+  
+  // Snapshot data at time of GRN
+  quantity      Int
+  costPrice     Float     // Unit cost
+  sellingPrice  Float?    // Optional: New selling price set during GRN
+  totalCost     Float
+  
+  createdAt     DateTime  @default(now())
+
+  @@index([grnId])
+  @@index([productId])
+  @@map("grn_items")
+}
+
+enum GRNStatus {
+  DRAFT
+  PENDING
+  COMPLETED
+  CANCELLED
+}
+
+enum PaymentStatus {
+  UNPAID
+  PARTIAL
+  PAID
+}
+
