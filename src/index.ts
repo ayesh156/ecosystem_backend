@@ -444,6 +444,254 @@ app.get('/', async (_req, res) => {
 });
 
 // ===================================
+// SYSTEM DIAGNOSTICS ENDPOINT (/test)
+// ===================================
+app.get('/test', async (_req, res) => {
+  const currentTime = new Date().toLocaleString('en-US', { 
+    dateStyle: 'full', 
+    timeStyle: 'medium' 
+  });
+  const dbConnected = isDbConnected();
+
+  const html = `
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>System Status | Eco System API</title>
+  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;800&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg: #09090b;
+      --card-bg: rgba(24, 24, 27, 0.6);
+      --primary: #10b981;
+      --primary-glow: rgba(16, 185, 129, 0.5);
+      --text-main: #f8fafc;
+      --text-muted: #94a3b8;
+      --border: rgba(255, 255, 255, 0.08);
+      --error: #ef4444;
+      --error-glow: rgba(239, 68, 68, 0.5);
+    }
+    
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    
+    body {
+      font-family: 'Outfit', sans-serif;
+      background-color: var(--bg);
+      color: var(--text-main);
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      overflow: hidden;
+      position: relative;
+    }
+
+    /* Animated Background */
+    .blob {
+      position: absolute;
+      border-radius: 50%;
+      filter: blur(80px);
+      z-index: 0;
+      opacity: 0.5;
+      animation: float 10s infinite alternate ease-in-out;
+    }
+    .blob-1 { top: -10%; left: -10%; width: 40vw; height: 40vw; background: rgba(16, 185, 129, 0.15); }
+    .blob-2 { bottom: -10%; right: -10%; width: 35vw; height: 35vw; background: rgba(56, 189, 248, 0.15); animation-delay: -5s; }
+
+    @keyframes float {
+      0% { transform: translate(0, 0) scale(1); }
+      100% { transform: translate(30px, 50px) scale(1.1); }
+    }
+
+    .container {
+      position: relative;
+      z-index: 10;
+      width: 90%;
+      max-width: 600px;
+      padding: 3rem;
+      background: var(--card-bg);
+      backdrop-filter: blur(20px);
+      -webkit-backdrop-filter: blur(20px);
+      border: 1px solid var(--border);
+      border-radius: 24px;
+      box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
+      animation: slideUp 0.8s cubic-bezier(0.16, 1, 0.3, 1);
+    }
+
+    @keyframes slideUp {
+      from { opacity: 0; transform: translateY(40px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+
+    .header {
+      text-align: center;
+      margin-bottom: 2.5rem;
+    }
+
+    .icon-wrapper {
+      width: 80px;
+      height: 80px;
+      margin: 0 auto 1.5rem;
+      background: linear-gradient(135deg, #10b98120, #38bdf820);
+      border: 1px solid rgba(16, 185, 129, 0.3);
+      border-radius: 20px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 2.5rem;
+      box-shadow: 0 0 30px var(--primary-glow);
+      animation: pulse-glow 3s infinite;
+    }
+
+    @keyframes pulse-glow {
+      0%, 100% { box-shadow: 0 0 20px var(--primary-glow); }
+      50% { box-shadow: 0 0 40px var(--primary-glow); }
+    }
+
+    h1 {
+      font-size: 2.5rem;
+      font-weight: 800;
+      letter-spacing: -1px;
+      background: linear-gradient(to right, #fff, #94a3b8);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      margin-bottom: 0.5rem;
+    }
+
+    .subtitle { color: var(--text-muted); font-size: 1.1rem; }
+
+    .status-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 1rem;
+      margin-bottom: 2.5rem;
+    }
+
+    .status-item {
+      background: rgba(255, 255, 255, 0.03);
+      border: 1px solid var(--border);
+      padding: 1.5rem;
+      border-radius: 16px;
+      display: flex;
+      flex-direction: column;
+      gap: 0.5rem;
+      transition: transform 0.3s ease, background 0.3s ease;
+    }
+
+    .status-item:hover {
+      transform: translateY(-5px);
+      background: rgba(255, 255, 255, 0.05);
+    }
+
+    .status-label {
+      font-size: 0.9rem;
+      color: var(--text-muted);
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      font-weight: 600;
+    }
+
+    .status-value {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      font-size: 1.2rem;
+      font-weight: 600;
+    }
+
+    .indicator {
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+    }
+
+    .indicator.online {
+      background: var(--primary);
+      box-shadow: 0 0 10px var(--primary);
+      animation: blink 2s infinite;
+    }
+    
+    .indicator.offline {
+      background: var(--error);
+      box-shadow: 0 0 10px var(--error);
+    }
+
+    @keyframes blink {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.4; }
+    }
+
+    .footer {
+      text-align: center;
+      padding-top: 1.5rem;
+      border-top: 1px solid var(--border);
+      color: var(--text-muted);
+      font-size: 0.9rem;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .badge {
+      padding: 0.4rem 0.8rem;
+      background: rgba(255,255,255,0.05);
+      border-radius: 20px;
+      font-size: 0.8rem;
+      border: 1px solid var(--border);
+    }
+    
+    @media (max-width: 600px) {
+      .status-grid { grid-template-columns: 1fr; }
+      .container { padding: 2rem; width: 95%; }
+    }
+  </style>
+</head>
+<body>
+  <div class="blob blob-1"></div>
+  <div class="blob blob-2"></div>
+
+  <div class="container">
+    <div class="header">
+      <div class="icon-wrapper">🚀</div>
+      <h1>System Diagnostics</h1>
+      <p class="subtitle">Eco System API is operational and ready</p>
+    </div>
+
+    <div class="status-grid">
+      <div class="status-item">
+        <span class="status-label">API Server</span>
+        <div class="status-value">
+          <div class="indicator online"></div>
+          Online
+        </div>
+      </div>
+      
+      <div class="status-item" style="border-color: ${dbConnected ? 'rgba(16, 185, 129, 0.3)' : 'rgba(239, 68, 68, 0.3)'}">
+        <span class="status-label">Database</span>
+        <div class="status-value" style="color: ${dbConnected ? '#10b981' : '#ef4444'}">
+          <div class="indicator ${dbConnected ? 'online' : 'offline'}"></div>
+          ${dbConnected ? 'Connected' : 'Disconnected'}
+        </div>
+      </div>
+    </div>
+
+    <div class="footer">
+      <span>${currentTime}</span>
+      <span class="badge">v1.0.0 | ${process.env.NODE_ENV || 'development'}</span>
+    </div>
+  </div>
+</body>
+</html>
+  `;
+
+  res.setHeader('Content-Type', 'text/html');
+  res.status(200).send(html);
+});
+
+// ===================================
 // ROUTE-LEVEL TIMEOUT FOR HEAVY OPERATIONS
 // ===================================
 // Email sending (3 SMTP attempts × 60s each) and PDF generation (Puppeteer ~30s)
