@@ -95,11 +95,9 @@ export const errorHandler = (
     message,
   };
 
-  // Include error details in development
-  if (process.env.NODE_ENV === 'development') {
-    response.error = err.message;
-    response.stack = err.stack;
-  }
+  // Include error details for debugging (temporarily enabled in production)
+  response.error = err.message;
+  response.stack = err.stack;
 
   console.error(`❌ Error: ${message}`, err);
 
