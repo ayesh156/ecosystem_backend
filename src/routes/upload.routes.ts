@@ -58,6 +58,26 @@ const upload = multer({
   }
 });
 
+// Configure multer for logo uploads
+const logoStorage = multer.diskStorage({
+  destination: (req: Request, file: Express.Multer.File, cb: (error: Error | null, destination: string) => void) => {
+    cb(null, uploadsDir);
+  },
+  filename: (req: Request, file: Express.Multer.File, cb: (error: Error | null, filename: string) => void) => {
+    const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
+    const extension = path.extname(file.originalname);
+    cb(null, `logo-${uniqueSuffix}${extension}`);
+  }
+});
+
+const uploadLogoMulter = multer({
+  storage: logoStorage,
+  fileFilter: fileFilter,
+  limits: {
+    fileSize: 5 * 1024 * 1024, // 5MB limit
+  }
+});
+
 // Upload product image
 router.post('/product-image', protect, requireShop, sensitiveRateLimiter, upload.single('image'), async (req: MulterRequest, res) => {
   try {
@@ -86,6 +106,38 @@ router.post('/product-image', protect, requireShop, sensitiveRateLimiter, upload
     res.status(500).json({
       success: false,
       message: 'Failed to upload image'
+    });
+  }
+});
+
+// Upload shop logo
+router.post('/shop-logo', protect, requireShop, sensitiveRateLimiter, uploadLogoMulter.single('image'), async (req: MulterRequest, res) => {
+  try {
+    if (!req.file) {
+      return res.status(400).json({
+        success: false,
+        message: 'No image file provided'
+      });
+    }
+
+    // Generate URL for the uploaded image
+    const imageUrl = `/uploads/${req.file.filename}`;
+
+    res.json({
+      success: true,
+      message: 'Logo uploaded successfully',
+      data: {
+        filename: req.file.filename,
+        url: imageUrl,
+        size: req.file.size,
+        mimetype: req.file.mimetype
+      }
+    });
+  } catch (error) {
+    console.error('Upload error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to upload logo'
     });
   }
 });
