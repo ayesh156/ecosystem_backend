@@ -132,7 +132,8 @@ app.use((_req, res, next) => {
 // ===================================
 
 // Serve static files for uploads (Local file storage replacing Supabase)
-app.use('/uploads', express.static(path.join(process.cwd(), 'uploads')));
+app.use('/uploads', express.static(path.join(process.cwd(), 'uploads'))); // Legacy support
+app.use(`${API_PREFIX}/uploads`, express.static(path.join(process.cwd(), 'uploads'))); // Proxied via NGINX
 
 // API version prefix
 const API_PREFIX = '/api/v1';

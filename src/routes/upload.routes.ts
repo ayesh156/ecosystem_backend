@@ -88,8 +88,8 @@ router.post('/product-image', protect, requireShop, sensitiveRateLimiter, upload
       });
     }
 
-    // Generate URL for the uploaded image
-    const imageUrl = `/uploads/${req.file.filename}`;
+    // Generate URL for the uploaded image (uses API prefix so Nginx proxies it)
+    const imageUrl = `/api/v1/uploads/${req.file.filename}`;
 
     res.json({
       success: true,
@@ -120,8 +120,8 @@ router.post('/shop-logo', protect, requireShop, sensitiveRateLimiter, uploadLogo
       });
     }
 
-    // Generate URL for the uploaded image
-    const imageUrl = `/uploads/${req.file.filename}`;
+    // Generate URL for the uploaded image (uses API prefix so Nginx proxies it)
+    const imageUrl = `/api/v1/uploads/${req.file.filename}`;
 
     res.json({
       success: true,
