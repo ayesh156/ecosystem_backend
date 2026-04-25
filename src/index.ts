@@ -127,6 +127,9 @@ app.use((_req, res, next) => {
   next();
 });
 
+// API version prefix
+const API_PREFIX = '/api/v1';
+
 // ===================================
 // STATIC FILE SERVING
 // ===================================
@@ -134,9 +137,6 @@ app.use((_req, res, next) => {
 // Serve static files for uploads (Local file storage replacing Supabase)
 app.use('/uploads', express.static(path.join(process.cwd(), 'uploads'))); // Legacy support
 app.use(`${API_PREFIX}/uploads`, express.static(path.join(process.cwd(), 'uploads'))); // Proxied via NGINX
-
-// API version prefix
-const API_PREFIX = '/api/v1';
 
 // Health check — MUST be instant. Render sends these every 5s from multiple IPs.
 // NEVER open a DB connection here. Use cached state from real queries.
