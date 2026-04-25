@@ -20,7 +20,7 @@ model Shop {
   subName       String?             // Secondary name e.g., "SOLUTIONS"
   tagline       String?             // Tagline e.g., "Computer Solutions"
   description   String?
-  logo          String?
+  logo          String?   @db.LongText
   address       String?
   phone         String?
   email         String?
